@@ -1,0 +1,38 @@
+{% extends 'legal_app/base.html' %}
+{% load crispy_forms_tags %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Генератор документов</h5>
+            </div>
+            <div class="card-body">
+                <form id="documentForm" method="post">
+                    {% csrf_token %}
+                    {{ form|crispy }}
+                    <button type="submit" class="btn btn-primary">Создать документ</button>
+                </form>
+                <div id="documentContent" class="mt-4"></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">История документов</h5>
+            </div>
+            <div class="card-body">
+                <div class="list-group">
+                    {% for document in documents %}
+                        <a href="#" class="list-group-item list-group-item-action">
+                            {{ document.title }} - {{ document.document_type }} - {{ document.created_at }}
+                        </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
