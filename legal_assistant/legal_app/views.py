@@ -7,6 +7,10 @@ from .models import LegalQuestion, Document
 from .utils import LegalAI
 import json
 
+legal_ai = LegalAI()
+response = legal_ai.get_legal_response("Что такое гражданское право?")
+document_content = legal_ai.generate_document("complaint", {"name": "Иван Иванов", "complaint_details": "..."})
+
 def home(request):
     return render(request, 'legal_app/home.html')
 
