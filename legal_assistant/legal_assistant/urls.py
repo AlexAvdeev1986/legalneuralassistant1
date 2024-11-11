@@ -17,6 +17,8 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from legal_app import views
+from legal_app.utils import LegalAI
+
 
 urlpatterns = [
     path('admin/', admin.site.urls),
