@@ -17,13 +17,12 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from legal_app import views
-from legal_app.utils import LegalAI
-
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('', views.home, name='home'),
-    path('chat/', views.chat, name='chat'),
-    path('document_generator/', views.document_generator, name='document_generator'),
-    path('legal_app/', include('legal_app.urls')),
+    path('admin/', admin.site.urls),  # Админка Django
+    path('accounts/', include('django.contrib.auth.urls')),  # Стандартные URL для аутентификации
+    path('', views.home, name='home'),  # Главная страница
+    path('chat/', views.chat, name='chat'),  # Страница чата
+    path('document_generator/', views.document_generator, name='document_generator'),  # Страница генерации документов
+    path('legal_app/', include('legal_app.urls')),  # Подключаем дополнительные URL для legal_app
 ]

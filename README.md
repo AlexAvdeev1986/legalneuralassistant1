@@ -48,9 +48,9 @@ django-admin startapp legal_app
 cd legal_assistant
 создаем
 touch .env
-OPENAI_API_KEY=your_openai_api_key
-SECRET_KEY=secret_key
-DEBUG=True
+OPENAI_API_KEY = 'your_openai_api_key'  # с кавычками
+SECRET_KEY = 'secret_key'  # с кавычками
+DEBUG = True  # без кавычек, так как это булево значение
 python manage.py makemigrations
 python manage.py migrate
 python manage.py createsuperuser
