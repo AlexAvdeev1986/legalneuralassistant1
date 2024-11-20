@@ -1,28 +1,36 @@
 # legal_app/utils.py
-
-import openai
-from django.conf import settings
-from typing import Dict, Any
 import json
+import logging
+import time
+from typing import Dict, Any
+from django.conf import settings
+from django.core.cache import cache
+from openai import OpenAI
+
+logger = logging.getLogger(__name__)
 
 class LegalAI:
     def __init__(self):
-        # Set the OpenAI API key from the Django settings
-        openai.api_key = settings.OPENAI_API_KEY
+        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        self.cache_timeout = 3600
 
-    def get_legal_response(self, question: str) -> Dict[str, Any]:
-        """
-        Sends a legal question to the OpenAI API and returns the answer and category.
+    def _get_cached_response(self, cache_key: str) -> Any:
+        return cache.get(cache_key)
 
-        Parameters:
-            question (str): The legal question to be answered.
+    def _cache_response(self, cache_key: str, response: Any):
+        cache.set(cache_key, response, self.cache_timeout)
 
-        Returns:
-            Dict[str, Any]: A dictionary containing the answer and the category.
-        """
+    def get_legal_response(self, question: str, user_ip: str = None) -> Dict[str, Any]:
+        start_time = time.time()
+        cache_key = f"legal_response_{hash(question)}"
+
+        cached_response = self._get_cached_response(cache_key)
+        if cached_response:
+            logger.info("Response found in cache.")
+            return cached_response
+
         try:
-            # Send the user's question to OpenAI for a response
-            response = openai.ChatCompletion.create(
+            response = self.client.chat.completions.create(
                 model="gpt-4",
                 messages=[
                     {"role": "system", "content": "Вы - юридический ассистент. Предоставьте точную и актуальную информацию по законодательству РФ."},
@@ -31,54 +39,50 @@ class LegalAI:
                 temperature=0.7,
                 max_tokens=2000
             )
-            
-            # Extract the answer from the OpenAI response
             answer = response.choices[0].message.content
-            
-            # Send the question again to determine the category
-            category_response = openai.ChatCompletion.create(
+
+            category_response = self.client.chat.completions.create(
                 model="gpt-4",
                 messages=[
-                    {"role": "system", "content": "Определите категорию юридического вопроса (например: гражданское право, уголовное право, административное право и т.д.)"},
+                    {"role": "system", "content": "Определите категорию юридического вопроса (гражданское право, уголовное право, административное право и т.д.)"},
                     {"role": "user", "content": question}
                 ],
                 temperature=0.3,
                 max_tokens=50
             )
-            
-            # Extract the category from the OpenAI response
             category = category_response.choices[0].message.content.strip()
-            
-            return {
+
+            result = {
                 'answer': answer,
-                'category': category
+                'category': category,
+                'processing_time': time.time() - start_time
             }
-            
+
+            self._cache_response(cache_key, result)
+            logger.info("Response successfully generated and cached.")
+            return result
+
         except Exception as e:
-            # Return an error message if an exception occurs
+            logger.error(f"Error processing request: {e}", exc_info=True)
             return {
                 'answer': f"Произошла ошибка при обработке запроса: {str(e)}",
-                'category': 'Ошибка'
+                'category': 'Ошибка',
+                'processing_time': time.time() - start_time
             }
 
-    def generate_document(self, doc_type: str, context: dict) -> str:
-        """
-        Generates a document based on a specified type and context using the OpenAI API.
+    def generate_document(self, doc_type: str, context: Dict[str, Any]) -> str:
+        cache_key = f"document_{hash(doc_type)}_{hash(json.dumps(context, sort_keys=True))}"
 
-        Parameters:
-            doc_type (str): The type of document to generate (e.g., "complaint", "contract").
-            context (dict): The context data required to generate the document.
+        cached_document = self._get_cached_response(cache_key)
+        if cached_document:
+            logger.info("Document found in cache.")
+            return cached_document
 
-        Returns:
-            str: The generated document content.
-        """
         try:
-            # Create a prompt with the document type and context data
             prompt = f"Сгенерируйте {doc_type} на основе следующих данных:\n"
             prompt += json.dumps(context, ensure_ascii=False, indent=2)
-            
-            # Request document content from OpenAI
-            response = openai.ChatCompletion.create(
+
+            response = self.client.chat.completions.create(
                 model="gpt-4",
                 messages=[
                     {"role": "system", "content": "Вы - юридический ассистент. Создайте юридический документ по предоставленному шаблону и данным."},
@@ -87,10 +91,13 @@ class LegalAI:
                 temperature=0.5,
                 max_tokens=2000
             )
-            
-            # Return the document content from the OpenAI response
-            return response.choices[0].message.content
-            
+
+            document_content = response.choices[0].message.content
+
+            self._cache_response(cache_key, document_content)
+            logger.info("Document successfully generated and cached.")
+            return document_content
+
         except Exception as e:
-            # Return an error message if an exception occurs
+            logger.error(f"Error generating document: {e}", exc_info=True)
             return f"Ошибка при генерации документа: {str(e)}"
