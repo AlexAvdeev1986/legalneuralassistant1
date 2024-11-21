@@ -11,6 +11,8 @@ class LegalQuestionForm(forms.ModelForm):
         }
 
 class DocumentGeneratorForm(forms.Form):
+    title = forms.CharField(max_length=200, required=True)
+
     DOCUMENT_TYPES = [
         ('complaint', 'Жалоба'),
         ('contract', 'Договор'),
