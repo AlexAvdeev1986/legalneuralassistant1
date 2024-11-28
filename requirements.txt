@@ -6,4 +6,4 @@ django-ratelimit==4.1.0
 crispy-bootstrap4==2022.1
 python-docx==1.0.1
 markdown==3.5.1
-
+httpx==0.23
