@@ -3,6 +3,7 @@
 
 {% block content %}
 <div class="row">
+    <!-- Form Section -->
     <div class="col-md-8">
         <div class="card">
             <div class="card-header">
@@ -11,26 +12,49 @@
             <div class="card-body">
                 <form id="documentForm" method="post">
                     {% csrf_token %}
+                    <!-- Render the form fields using crispy_forms for better formatting -->
                     {{ form|crispy }}
+
+                    <!-- Submit button for document generation -->
                     <button type="submit" class="btn btn-primary">Создать документ</button>
                 </form>
-                <div id="documentContent" class="mt-4"></div>
+
+                <!-- Display form errors if any -->
+                {% if form.errors %}
+                    <div class="alert alert-danger mt-3">
+                        <strong>Ошибки формы:</strong>
+                        <ul>
+                            {% for field, errors in form.errors.items %}
+                                <li>{{ field }}: {{ errors|join:", " }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                {% endif %}
             </div>
         </div>
     </div>
+
+    <!-- Document History Section -->
     <div class="col-md-4">
         <div class="card">
             <div class="card-header">
                 <h5 class="card-title mb-0">История документов</h5>
             </div>
             <div class="card-body">
-                <div class="list-group">
-                    {% for document in documents %}
-                        <a href="#" class="list-group-item list-group-item-action">
-                            {{ document.title }} - {{ document.document_type }} - {{ document.created_at }}
-                        </a>
-                    {% endfor %}
-                </div>
+                {% if documents %}
+                    <!-- Display the list of generated documents -->
+                    <div class="list-group">
+                        {% for document in documents %}
+                            <a href="{% url 'download_document' document.id %}" class="list-group-item list-group-item-action">
+                                {{ document.title }} - {{ document.document_type }} <br>
+                                <small>{{ document.created_at|date:"d.m.Y H:i" }}</small>
+                            </a>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <!-- Message when there are no documents in history -->
+                    <p class="text-muted">История документов отсутствует.</p>
+                {% endif %}
             </div>
         </div>
     </div>

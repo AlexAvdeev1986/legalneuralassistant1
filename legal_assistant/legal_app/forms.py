@@ -7,27 +7,38 @@ class LegalQuestionForm(forms.ModelForm):
         model = LegalQuestion
         fields = ['question']
         widgets = {
-            'question': forms.Textarea(attrs={'rows': 4, 'class': 'form-control'})
+            'question': forms.Textarea(attrs={
+                'rows': 4,
+                'class': 'form-control',
+                'placeholder': 'Введите ваш юридический вопрос...'
+            })
         }
 
 class DocumentGeneratorForm(forms.Form):
-    title = forms.CharField(max_length=200, required=True)
-
-    DOCUMENT_TYPES = [
-        ('complaint', 'Жалоба'),
-        ('contract', 'Договор'),
-        ('statement', 'Заявление'),
-        ('pretension', 'Претензия'),
-    ]
-    
     document_type = forms.ChoiceField(
-        choices=DOCUMENT_TYPES,
+        choices=[
+            ('complaint', 'Жалоба'),
+            ('contract', 'Договор'),
+            ('statement', 'Заявление'),
+            ('pretension', 'Претензия'),
+        ],
+        label='Тип документа',
         widget=forms.Select(attrs={'class': 'form-control'})
     )
+    
+    title = forms.CharField(
+        label='Название',
+        max_length=200,
+        widget=forms.TextInput(attrs={'class': 'form-control'})
+    )
+    
     context = forms.CharField(
-        widget=forms.Textarea(attrs={
-            'rows': 6,
-            'class': 'form-control',
-            'placeholder': 'Введите необходимые данные для документа в формате JSON'
-        })
+        label='Контекст',
+        widget=forms.Textarea(attrs={'rows': 5, 'class': 'form-control'}),
+        help_text='Введите контекст документа.'
+    )
+    
+    content = forms.CharField(
+        label='Содержание документа',
+        widget=forms.Textarea(attrs={'rows': 8, 'class': 'form-control', 'placeholder': 'Введите содержание документа'}),
     )

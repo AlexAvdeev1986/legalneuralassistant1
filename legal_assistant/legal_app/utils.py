@@ -1,4 +1,3 @@
-# legal_app/utils.py
 import json
 import logging
 import time
@@ -22,7 +21,7 @@ class LegalAI:
         """Store a response in the cache."""
         cache.set(cache_key, response, self.cache_timeout)
 
-    def get_legal_response(self, question: str, user_ip: str = None) -> Dict[str, Any]:
+    def get_legal_response(self, question: str) -> Dict[str, Any]:
         """Get a legal response to a user's question from OpenAI."""
         start_time = time.time()
         cache_key = f"legal_response_{hash(question)}"
@@ -34,14 +33,12 @@ class LegalAI:
             return cached_response
 
         try:
-            # Request legal answer from OpenAI
-            answer = self._get_answer_from_openai(question)
+            # Generate the legal answer and its category
+            answer = self._get_openai_response(question, context_type="answer")
+            category = self._get_openai_response(question, context_type="category")
 
-            # Request legal category for the question
-            category = self._get_category_from_openai(question)
-
-            # Build and format the legal response
-            formatted_response = self._format_legal_response(answer, category)
+            # Format the legal response
+            formatted_response = self._format_response(answer, category)
 
             # Cache the result
             self._cache_response(cache_key, formatted_response)
@@ -52,51 +49,31 @@ class LegalAI:
             logger.error(f"Error processing request: {e}", exc_info=True)
             return self._handle_error(e, start_time)
 
-    def _get_answer_from_openai(self, question: str) -> str:
-        """Get a legal answer from OpenAI."""
+    def _get_openai_response(self, question: str, context_type: str) -> str:
+        """Get a legal answer or category from OpenAI."""
+        if context_type == "answer":
+            system_message = "You are a legal assistant providing accurate and relevant legal information under Russian law."
+        else:
+            system_message = "Determine the category of this legal question (e.g., civil law, criminal law, administrative law)."
+
         response = self.client.chat.completions.create(
             model="gpt-4",
             messages=[
-                {
-                    "role": "system",
-                    "content": "Вы - юридический ассистент. Предоставьте точную и актуальную информацию по законодательству РФ.",
-                },
+                {"role": "system", "content": system_message},
                 {"role": "user", "content": question},
             ],
-            temperature=0.7,
-            max_tokens=2000,
+            temperature=0.5 if context_type == "answer" else 0.3,
+            max_tokens=2000 if context_type == "answer" else 100,
         )
-        return response.choices[0].message.content
+        return response.choices[0].message.content.strip()
 
-    def _get_category_from_openai(self, question: str) -> str:
-        """Get the category of the legal question from OpenAI."""
-        category_response = self.client.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Определите категорию юридического вопроса (гражданское право, уголовное право, административное право и т.д.)",
-                },
-                {"role": "user", "content": question},
-            ],
-            temperature=0.3,
-            max_tokens=50,
-        )
-        return category_response.choices[0].message.content.strip()
-
-    def _format_legal_response(self, answer: str, category: str) -> Dict[str, Any]:
+    def _format_response(self, answer: str, category: str) -> Dict[str, Any]:
         """Format the legal response with status and details."""
-        formatted_answer = f"""
-        Статус: Успех
-        Категория: {category}
-        Ответ:
-        {answer}
-        """
         return {
             "status": "success",
-            "formatted_answer": formatted_answer,
             "category": category,
             "answer": answer,
+            "formatted_answer": f"**Category:** {category}\n\n**Answer:**\n{answer}",
         }
 
     def _handle_error(self, error: Exception, start_time: float) -> Dict[str, Any]:
@@ -104,17 +81,17 @@ class LegalAI:
         elapsed_time = time.time() - start_time
         return {
             "status": "error",
-            "message": f"Произошла ошибка при обработке запроса: {str(error)}",
+            "message": "An error occurred while processing your request. Please try again later.",
+            "details": str(error),
             "processing_time": elapsed_time,
         }
 
-    def generate_document(self, doc_type: str, context: Dict[str, Any]) -> str:
+    def generate_document(self, doc_type: str, context: str) -> str:
         """Generate a legal document based on the given context."""
-        cache_key = (
-            f"document_{hash(doc_type)}_{hash(json.dumps(context, sort_keys=True))}"
-        )
+        # Cache key based on document type and context (now plain text)
+        cache_key = f"document_{hash(doc_type)}_{hash(context)}"
 
-        # Check if document is cached
+        # Check if the document is cached
         cached_document = self._get_cached_response(cache_key)
         if cached_document:
             logger.info("Document found in cache.")
@@ -131,24 +108,23 @@ class LegalAI:
 
         except Exception as e:
             logger.error(f"Error generating document: {e}", exc_info=True)
-            return f"Ошибка при генерации документа: {str(e)}"
+            return f"Error generating document: {str(e)}"
 
-    def _generate_document_content(self, doc_type: str, context: Dict[str, Any]) -> str:
+    def _generate_document_content(self, doc_type: str, context: str) -> str:
         """Generate a legal document using OpenAI based on the context."""
-        prompt = f"Сгенерируйте {doc_type} на основе следующих данных:\n"
-        prompt += json.dumps(context, ensure_ascii=False, indent=2)
+        prompt = f"Create a {doc_type} based on the following details:\n"
+        prompt += context  # Now it's plain text instead of JSON
 
         response = self.client.chat.completions.create(
             model="gpt-4",
             messages=[
                 {
                     "role": "system",
-                    "content": "Вы - юридический ассистент. Создайте юридический документ по предоставленному шаблону и данным.",
+                    "content": "You are a legal assistant. Create a legal document based on the provided template and details.",
                 },
                 {"role": "user", "content": prompt},
             ],
             temperature=0.5,
             max_tokens=2000,
         )
-
-        return response.choices[0].message.content
+        return response.choices[0].message.content.strip()
