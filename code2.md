@@ -298,208 +298,161 @@ urlpatterns = [
 
     ├── views.py
 from django.shortcuts import render
+from django.http import HttpResponse, JsonResponse
 from django.contrib.auth.decorators import login_required
-from django.http import JsonResponse
-from django.http import HttpResponse
 from django.views.decorators.http import require_http_methods
 from django.core.exceptions import ValidationError
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.core.validators import validate_ipv46_address
 from django_ratelimit.decorators import ratelimit
+from django.shortcuts import get_object_or_404
 from .forms import LegalQuestionForm, DocumentGeneratorForm
-from .models import LegalQuestion, Document
+from .models import LegalQuestion, Document  # Ensure Document is imported
 from .utils import LegalAI
-import json
 import logging
+import json
 from functools import wraps
-from typing import Any, Dict
+from docx import Document as DocxDocument
+from typing import Dict, Any
 
 # Initialize LegalAI instance and logger
 legal_ai = LegalAI()
 logger = logging.getLogger(__name__)
 
 def format_russian_response(data: Dict[str, Any], status: int = 200) -> JsonResponse:
-    """
-    Форматирует ответ с поддержкой русского языка
-    """
+    """Formats a JSON response supporting Russian language."""
     return JsonResponse(data, json_dumps_params={'ensure_ascii': False}, status=status)
 
 @ensure_csrf_cookie
 def home(request):
-    """
-    Отображение главной страницы
-    """
+    """Renders the home page."""
     return render(request, 'legal_app/home.html', {
         'title': 'Главная страница',
         'description': 'Юридический помощник с искусственным интеллектом'
     })
 
 def handle_errors(view_func):
-    """
-    Decorator for handling common errors in views with Russian messages
-    """
+    """Decorator for handling common errors in views with Russian messages."""
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
         try:
             return view_func(request, *args, **kwargs)
         except ValidationError as e:
-            logger.warning(f"Validation error in {view_func.__name__}: {str(e)}")
-            return format_russian_response({
-                'status': 'error',
-                'message': 'Ошибка валидации данных.'
-            }, status=400)
+            logger.warning(f"Validation error: {str(e)}")
+            return format_russian_response({'status': 'error', 'message': 'Ошибка валидации данных.'}, 400)
         except json.JSONDecodeError as e:
-            logger.warning(f"JSON decode error in {view_func.__name__}: {str(e)}")
-            return format_russian_response({
-                'status': 'error',
-                'message': 'Некорректный формат JSON.'
-            }, status=400)
+            logger.warning(f"JSON decode error: {str(e)}")
+            return format_russian_response({'status': 'error', 'message': 'Некорректный формат JSON.'}, 400)
         except Exception as e:
-            logger.error(f"Error in {view_func.__name__}: {str(e)}", exc_info=True)
-            return format_russian_response({
-                'status': 'error',
-                'message': 'Произошла внутренняя ошибка сервера.'
-            }, status=500)
+            logger.error(f"Internal error: {str(e)}", exc_info=True)
+            return format_russian_response({'status': 'error', 'message': 'Произошла внутренняя ошибка сервера.'}, 500)
     return wrapper
 
 def get_client_ip(request) -> str:
-    """
-    Get client IP address from request with validation
-    """
+    """Retrieve and validate the client IP address."""
     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-    if x_forwarded_for:
-        ip = x_forwarded_for.split(',')[0]
-    else:
-        ip = request.META.get('REMOTE_ADDR')
+    ip = x_forwarded_for.split(',')[0] if x_forwarded_for else request.META.get('REMOTE_ADDR')
     
     try:
         validate_ipv46_address(ip)
         return ip
     except ValidationError:
-        return 'неизвестно'
+        return 'unknown'
 
 @login_required
 @require_http_methods(["GET", "POST"])
 @ratelimit(key='user', rate='10/m', group='legal_chat')
 @handle_errors
 def chat(request):
-    """
-    Handle legal chat interactions with Russian responses
-    """
+    """Handle legal chat interactions and generate responses."""
     if request.method == 'POST':
         if getattr(request, 'limited', False):
-            return format_russian_response({
-                'status': 'error',
-                'message': 'Превышен лимит запросов. Пожалуйста, подождите минуту.'
-            }, status=429)
+            return format_russian_response({'status': 'error', 'message': 'Превышен лимит запросов. Подождите минуту.'}, 429)
         
         form = LegalQuestionForm(request.POST)
         if form.is_valid():
             question = form.cleaned_data['question']
             user_ip = get_client_ip(request)
             
-            try:
-                response = legal_ai.get_legal_response(
-                    question=question,
-                    user_ip=user_ip
-                )
-                
+            response = legal_ai.get_legal_response(question)
+            if response.get('status') == 'success':
                 legal_question = LegalQuestion.objects.create(
                     user=request.user,
                     question=question,
                     answer=response['answer'],
                     category=response['category'],
                     ip_address=user_ip,
-                    status='answered',
-                    processing_time=response.get('processing_time')
+                    status='answered'
                 )
-                
                 return format_russian_response({
                     'status': 'success',
                     'answer': response['answer'],
                     'category': response['category'],
                     'question_id': legal_question.id
                 })
-            except Exception as e:
-                logger.error(f"Error getting AI response: {str(e)}", exc_info=True)
-                return format_russian_response({
-                    'status': 'error',
-                    'message': 'Не удалось получить ответ от сервиса. Пожалуйста, попробуйте позже.'
-                }, status=500)
+            else:
+                return format_russian_response({'status': 'error', 'message': 'Не удалось получить ответ от AI.'}, 500)
         
-        return format_russian_response({
-            'status': 'error',
-            'errors': {k: [str(e) for e in v] for k, v in form.errors.items()}
-        }, status=400)
+        return format_russian_response({'status': 'error', 'errors': form.errors}, 400)
 
     # GET request: display form and question history
     questions = LegalQuestion.objects.filter(user=request.user).order_by('-created_at')
-    return render(request, 'legal_app/chat.html', {
-        'form': LegalQuestionForm(),
-        'questions': questions
-    })
+    return render(request, 'legal_app/chat.html', {'form': LegalQuestionForm(), 'questions': questions})
 
 @login_required
 @require_http_methods(["GET", "POST"])
 @handle_errors
 def document_generator(request):
-    """
-    Handle document generation requests with Russian responses
-    """
+    """Generate legal documents dynamically."""
     if request.method == 'POST':
         form = DocumentGeneratorForm(request.POST)
         if form.is_valid():
             try:
                 doc_type = form.cleaned_data['document_type']
                 title = form.cleaned_data['title']
-                context_str = form.cleaned_data['context']
+                context = form.cleaned_data['context']  # Direct plain text context
                 
-                # Parse and validate JSON context
-                try:
-                    context = json.loads(context_str)
-                except json.JSONDecodeError:
-                    return format_russian_response({
-                        'status': 'error',
-                        'message': 'Некорректный формат контекста. Убедитесь, что это валидный JSON.'
-                    }, status=400)
+                # Generate document using LegalAI
+                generated_content = legal_ai.generate_document(doc_type, context)
                 
-                document_content = legal_ai.generate_document(doc_type, context)
+                # Create Word document
+                document = DocxDocument()
+                document.add_heading(title, 0)
+                for paragraph in generated_content.split("\n"):
+                    document.add_paragraph(paragraph)
                 
-                document = Document.objects.create(
-                    user=request.user,
-                    title=title,
-                    content=document_content,
-                    document_type=doc_type
+                # Prepare document for download
+                response = HttpResponse(
+                    content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
                 )
+                response['Content-Disposition'] = f'attachment; filename="{title}.docx"'
+                document.save(response)
                 
-                return format_russian_response({
-                    'status': 'success',
-                    'content': document_content,
-                    'document_id': document.id,
-                    'message': 'Документ успешно создан'
-                })
+                logger.info(f"Document '{title}' generated successfully.")
+                return response
+            
             except Exception as e:
                 logger.error(f"Error generating document: {str(e)}", exc_info=True)
-                return format_russian_response({
-                    'status': 'error',
-                    'message': 'Ошибка при генерации документа. Пожалуйста, попробуйте позже.'
-                }, status=500)
+                return format_russian_response({'status': 'error', 'message': 'Ошибка при генерации документа.'}, 500)
         
-        return format_russian_response({
-            'status': 'error',
-            'errors': {k: [str(e) for e in v] for k, v in form.errors.items()}
-        }, status=400)
+        return format_russian_response({'status': 'error', 'errors': form.errors}, 400)
 
     # GET request: display form and document history
-    documents = Document.objects.filter(user=request.user).order_by('-created_at')
+    documents = Document.objects.filter(user=request.user).order_by('-created_at')  # Ensure Document is defined
     return render(request, 'legal_app/document_generator.html', {
         'form': DocumentGeneratorForm(),
-        'documents': documents
+        'documents': documents  # Ensure 'documents' context is passed for history display
     })
+
+def download_document(request, document_id):
+    document = get_object_or_404(Document, id=document_id)
+    response = HttpResponse(document.file, content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    response['Content-Disposition'] = f'attachment; filename="{document.title}.docx"'
+    return response
+
 
 
     ├── forms.py
-    # legal_app/forms.py
 # legal_app/forms.py
 from django import forms
 from .models import LegalQuestion, Document
@@ -509,29 +462,40 @@ class LegalQuestionForm(forms.ModelForm):
         model = LegalQuestion
         fields = ['question']
         widgets = {
-            'question': forms.Textarea(attrs={'rows': 4, 'class': 'form-control'})
+            'question': forms.Textarea(attrs={
+                'rows': 4,
+                'class': 'form-control',
+                'placeholder': 'Введите ваш юридический вопрос...'
+            })
         }
 
 class DocumentGeneratorForm(forms.Form):
-    title = forms.CharField(max_length=200, required=True)
-
-    DOCUMENT_TYPES = [
-        ('complaint', 'Жалоба'),
-        ('contract', 'Договор'),
-        ('statement', 'Заявление'),
-        ('pretension', 'Претензия'),
-    ]
-    
     document_type = forms.ChoiceField(
-        choices=DOCUMENT_TYPES,
+        choices=[
+            ('complaint', 'Жалоба'),
+            ('contract', 'Договор'),
+            ('statement', 'Заявление'),
+            ('pretension', 'Претензия'),
+        ],
+        label='Тип документа',
         widget=forms.Select(attrs={'class': 'form-control'})
     )
+    
+    title = forms.CharField(
+        label='Название',
+        max_length=200,
+        widget=forms.TextInput(attrs={'class': 'form-control'})
+    )
+    
     context = forms.CharField(
-        widget=forms.Textarea(attrs={
-            'rows': 6,
-            'class': 'form-control',
-            'placeholder': 'Введите необходимые данные для документа в формате JSON'
-        })
+        label='Контекст',
+        widget=forms.Textarea(attrs={'rows': 5, 'class': 'form-control'}),
+        help_text='Введите контекст документа.'
+    )
+    
+    content = forms.CharField(
+        label='Содержание документа',
+        widget=forms.Textarea(attrs={'rows': 8, 'class': 'form-control', 'placeholder': 'Введите содержание документа'}),
     )
 
 
@@ -552,95 +516,123 @@ logger = logging.getLogger(__name__)
 class LegalAI:
     def __init__(self):
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
-        self.cache_timeout = 3600
+        self.cache_timeout = 3600  # 1 hour cache timeout
 
     def _get_cached_response(self, cache_key: str) -> Any:
+        """Retrieve a response from the cache."""
         return cache.get(cache_key)
 
     def _cache_response(self, cache_key: str, response: Any):
+        """Store a response in the cache."""
         cache.set(cache_key, response, self.cache_timeout)
 
-    def get_legal_response(self, question: str, user_ip: str = None) -> Dict[str, Any]:
+    def get_legal_response(self, question: str) -> Dict[str, Any]:
+        """Get a legal response to a user's question from OpenAI."""
         start_time = time.time()
         cache_key = f"legal_response_{hash(question)}"
 
+        # Check if response is cached
         cached_response = self._get_cached_response(cache_key)
         if cached_response:
             logger.info("Response found in cache.")
             return cached_response
 
         try:
-            response = self.client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": "Вы - юридический ассистент. Предоставьте точную и актуальную информацию по законодательству РФ."},
-                    {"role": "user", "content": question}
-                ],
-                temperature=0.7,
-                max_tokens=2000
-            )
-            answer = response.choices[0].message.content
+            # Generate the legal answer and its category
+            answer = self._get_openai_response(question, context_type="answer")
+            category = self._get_openai_response(question, context_type="category")
 
-            category_response = self.client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": "Определите категорию юридического вопроса (гражданское право, уголовное право, административное право и т.д.)"},
-                    {"role": "user", "content": question}
-                ],
-                temperature=0.3,
-                max_tokens=50
-            )
-            category = category_response.choices[0].message.content.strip()
+            # Format the legal response
+            formatted_response = self._format_response(answer, category)
 
-            result = {
-                'answer': answer,
-                'category': category,
-                'processing_time': time.time() - start_time
-            }
-
-            self._cache_response(cache_key, result)
+            # Cache the result
+            self._cache_response(cache_key, formatted_response)
             logger.info("Response successfully generated and cached.")
-            return result
+            return formatted_response
 
         except Exception as e:
             logger.error(f"Error processing request: {e}", exc_info=True)
-            return {
-                'answer': f"Произошла ошибка при обработке запроса: {str(e)}",
-                'category': 'Ошибка',
-                'processing_time': time.time() - start_time
-            }
+            return self._handle_error(e, start_time)
 
-    def generate_document(self, doc_type: str, context: Dict[str, Any]) -> str:
-        cache_key = f"document_{hash(doc_type)}_{hash(json.dumps(context, sort_keys=True))}"
+    def _get_openai_response(self, question: str, context_type: str) -> str:
+        """Get a legal answer or category from OpenAI."""
+        if context_type == "answer":
+            system_message = "You are a legal assistant providing accurate and relevant legal information under Russian law."
+        else:
+            system_message = "Determine the category of this legal question (e.g., civil law, criminal law, administrative law)."
 
+        response = self.client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": question},
+            ],
+            temperature=0.5 if context_type == "answer" else 0.3,
+            max_tokens=2000 if context_type == "answer" else 100,
+        )
+        return response.choices[0].message.content.strip()
+
+    def _format_response(self, answer: str, category: str) -> Dict[str, Any]:
+        """Format the legal response with status and details."""
+        return {
+            "status": "success",
+            "category": category,
+            "answer": answer,
+            "formatted_answer": f"**Category:** {category}\n\n**Answer:**\n{answer}",
+        }
+
+    def _handle_error(self, error: Exception, start_time: float) -> Dict[str, Any]:
+        """Handle errors by logging and returning a generic error response."""
+        elapsed_time = time.time() - start_time
+        return {
+            "status": "error",
+            "message": "An error occurred while processing your request. Please try again later.",
+            "details": str(error),
+            "processing_time": elapsed_time,
+        }
+
+    def generate_document(self, doc_type: str, context: str) -> str:
+        """Generate a legal document based on the given context."""
+        # Cache key based on document type and context (now plain text)
+        cache_key = f"document_{hash(doc_type)}_{hash(context)}"
+
+        # Check if the document is cached
         cached_document = self._get_cached_response(cache_key)
         if cached_document:
             logger.info("Document found in cache.")
             return cached_document
 
         try:
-            prompt = f"Сгенерируйте {doc_type} на основе следующих данных:\n"
-            prompt += json.dumps(context, ensure_ascii=False, indent=2)
+            # Generate document content using OpenAI
+            document_content = self._generate_document_content(doc_type, context)
 
-            response = self.client.chat.completions.create(
-                model="gpt-4",
-                messages=[
-                    {"role": "system", "content": "Вы - юридический ассистент. Создайте юридический документ по предоставленному шаблону и данным."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.5,
-                max_tokens=2000
-            )
-
-            document_content = response.choices[0].message.content
-
+            # Cache the document content
             self._cache_response(cache_key, document_content)
             logger.info("Document successfully generated and cached.")
             return document_content
 
         except Exception as e:
             logger.error(f"Error generating document: {e}", exc_info=True)
-            return f"Ошибка при генерации документа: {str(e)}"
+            return f"Error generating document: {str(e)}"
+
+    def _generate_document_content(self, doc_type: str, context: str) -> str:
+        """Generate a legal document using OpenAI based on the context."""
+        prompt = f"Create a {doc_type} based on the following details:\n"
+        prompt += context  # Now it's plain text instead of JSON
+
+        response = self.client.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a legal assistant. Create a legal document based on the provided template and details.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.5,
+            max_tokens=2000,
+        )
+        return response.choices[0].message.content.strip()
 
 
     ├── templates/
@@ -705,6 +697,7 @@ class LegalAI:
 
 {% block content %}
 <div class="row">
+    <!-- Form Section -->
     <div class="col-md-8">
         <div class="card">
             <div class="card-header">
@@ -713,31 +706,55 @@ class LegalAI:
             <div class="card-body">
                 <form id="documentForm" method="post">
                     {% csrf_token %}
+                    <!-- Render the form fields using crispy_forms for better formatting -->
                     {{ form|crispy }}
+
+                    <!-- Submit button for document generation -->
                     <button type="submit" class="btn btn-primary">Создать документ</button>
                 </form>
-                <div id="documentContent" class="mt-4"></div>
+
+                <!-- Display form errors if any -->
+                {% if form.errors %}
+                    <div class="alert alert-danger mt-3">
+                        <strong>Ошибки формы:</strong>
+                        <ul>
+                            {% for field, errors in form.errors.items %}
+                                <li>{{ field }}: {{ errors|join:", " }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                {% endif %}
             </div>
         </div>
     </div>
+
+    <!-- Document History Section -->
     <div class="col-md-4">
         <div class="card">
             <div class="card-header">
                 <h5 class="card-title mb-0">История документов</h5>
             </div>
             <div class="card-body">
-                <div class="list-group">
-                    {% for document in documents %}
-                        <a href="#" class="list-group-item list-group-item-action">
-                            {{ document.title }} - {{ document.document_type }} - {{ document.created_at }}
-                        </a>
-                    {% endfor %}
-                </div>
+                {% if documents %}
+                    <!-- Display the list of generated documents -->
+                    <div class="list-group">
+                        {% for document in documents %}
+                            <a href="{% url 'download_document' document.id %}" class="list-group-item list-group-item-action">
+                                {{ document.title }} - {{ document.document_type }} <br>
+                                <small>{{ document.created_at|date:"d.m.Y H:i" }}</small>
+                            </a>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <!-- Message when there are no documents in history -->
+                    <p class="text-muted">История документов отсутствует.</p>
+                {% endif %}
             </div>
         </div>
     </div>
 </div>
 {% endblock %}
+
 
     └── static/
         └── legal_app/
