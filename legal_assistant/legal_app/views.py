@@ -104,22 +104,29 @@ def chat(request):
                     user_ip=user_ip
                 )
                 
-                legal_question = LegalQuestion.objects.create(
-                    user=request.user,
-                    question=question,
-                    answer=response['answer'],
-                    category=response['category'],
-                    ip_address=user_ip,
-                    status='answered',
-                    processing_time=response.get('processing_time')
-                )
-                
-                return format_russian_response({
-                    'status': 'success',
-                    'answer': response['answer'],
-                    'category': response['category'],
-                    'question_id': legal_question.id
-                })
+                # Ensure response is a dictionary with keys
+                if 'answer' in response and 'category' in response:
+                    legal_question = LegalQuestion.objects.create(
+                        user=request.user,
+                        question=question,
+                        answer=response['answer'],
+                        category=response['category'],
+                        ip_address=user_ip,
+                        status='answered',
+                        processing_time=response.get('processing_time')
+                    )
+                    
+                    return format_russian_response({
+                        'status': 'success',
+                        'answer': response['answer'],
+                        'category': response['category'],
+                        'question_id': legal_question.id
+                    })
+                else:
+                    return format_russian_response({
+                        'status': 'error',
+                        'message': 'Не удалось получить правильный ответ от AI.'
+                    }, status=500)
             except Exception as e:
                 logger.error(f"Error getting AI response: {str(e)}", exc_info=True)
                 return format_russian_response({

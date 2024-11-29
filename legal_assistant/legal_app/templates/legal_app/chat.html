@@ -4,6 +4,7 @@
 
 {% block content %}
 <div class="row">
+    <!-- Question Form Section -->
     <div class="col-md-8">
         <div class="card">
             <div class="card-header">
@@ -15,10 +16,14 @@
                     {{ form|crispy }}
                     <button type="submit" class="btn btn-primary">Задать вопрос</button>
                 </form>
-                <div id="response" class="mt-4"></div>
+                <div id="response" class="mt-4">
+                    <!-- Dynamic response will be shown here -->
+                </div>
             </div>
         </div>
     </div>
+
+    <!-- History Section -->
     <div class="col-md-4">
         <div class="card">
             <div class="card-header">
@@ -26,4 +31,59 @@
             </div>
             <div class="card-body">
                 <div class="list-group">
+                    {% for question in questions %}
+                        <a href="#" class="list-group-item list-group-item-action">
+                            <h6 class="mb-1">{{ question.question }}</h6>
+                            <p class="mb-1">Ответ: {{ question.answer }}</p>
+                            <small>Категория: {{ question.category }}</small>
+                        </a>
+                    {% empty %}
+                        <p class="text-muted">Вы еще не задали вопросов.</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Script for handling form submission and showing AI responses dynamically -->
+<script>
+    document.getElementById("questionForm").addEventListener("submit", function(event) {
+        event.preventDefault();
+        
+        var form = event.target;
+        var formData = new FormData(form);
+        var responseDiv = document.getElementById("response");
+
+        // Clear previous response
+        responseDiv.innerHTML = '';
+
+        // Submit the form via AJAX
+        fetch("{% url 'legal_app:chat' %}", {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                responseDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        <strong>Ответ:</strong> ${data.answer}<br>
+                        <strong>Категория:</strong> ${data.category}
+                    </div>`;
+            } else {
+                responseDiv.innerHTML = `
+                    <div class="alert alert-danger">
+                        <strong>Ошибка:</strong> ${data.message || 'Произошла ошибка. Пожалуйста, попробуйте снова.'}
+                    </div>`;
+            }
+        })
+        .catch(error => {
+            responseDiv.innerHTML = `
+                <div class="alert alert-danger">
+                    <strong>Ошибка:</strong> Произошла ошибка при отправке запроса.
+                </div>`;
+        });
+    });
+</script>
 {% endblock %}
