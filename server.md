@@ -47,6 +47,7 @@ DJANGO_SETTINGS_MODULE=legal_assistant.settings
 OPENAI_API_KEY=ваш_openai_api_ключ
 ```
 
+
 ### 6. Настройка базы данных
 
 ```bash
@@ -71,21 +72,20 @@ python manage.py collectstatic
 pip install gunicorn
 
 # Создание systemd службы
-nano /etc/systemd/system/legal_assistant.service
+nano /etc/systemd/system/legalassistant.service
 
 # Содержимое службы:
 [Unit]
-Description=Legal Neural Assistant Gunicorn Daemon
+Description=Gunicorn instance to serve Legal Assistant Django App
 After=network.target
 
 [Service]
 User=root
 Group=root
-WorkingDirectory=/root/legalneuralassistant1
-ExecStart=/root/legalneuralassistant1/venv/bin/gunicorn \
-          --workers 3 \
-          --bind unix:/root/legalneuralassistant1/legal_assistant.sock \
-          legal_assistant.wsgi:application
+WorkingDirectory=/root/legalneuralassistant1/legal_assistant
+ExecStart=/root/legalneuralassistant1/venv/bin/gunicorn --workers 3 --bind 127.0.0.1:8000 legal_assistant.wsgi:application
+Environment="PATH=/root/legalneuralassistant1/venv/bin"
+Environment="PYTHONPATH=/root/legalneuralassistant1/legal_assistant"
 
 [Install]
 WantedBy=multi-user.target
@@ -94,32 +94,60 @@ WantedBy=multi-user.target
 systemctl start legal_assistant
 systemctl enable legal_assistant
 ```
+```bash
+ Перезагрузите systemd:
+После внесения изменений выполните команды:
+systemctl daemon-reload
+systemctl restart legalassistant
+
+4. Проверьте статус сервиса:
+bash
+Копировать код
+systemctl status legalassistant
+
+```bash
+
+
+```bash
 
 ### 9. Настройка Nginx
 
 ```bash
+Установите Nginx, если он еще не установлен:
+apt install nginx -y
+
+Проверьте статус Nginx:
+systemctl status nginx
+
 # Создание конфигурации Nginx
-nano /etc/nginx/sites-available/legal_assistant
+nano /etc/nginx/sites-available/legalneuralassistant
 
 # Содержимое конфигурации:
 server {
     listen 80;
-    server_name ваш_домен_или_ip;
+    server_name legalneura.ddns.net;
 
-    location = /favicon.ico { access_log off; log_not_found off; }
-    
-    location /static/ {
-        root /root/legalneuralassistant1;
-    }
+    root /root/legalneuralassistant1;
+    index index.html index.htm;
 
     location / {
-        include proxy_params;
-        proxy_pass http://unix:/root/legalneuralassistant1/legal_assistant.sock;
+        proxy_pass http://127.0.0.1:8000; # Убедитесь, что приложение работает на этом порту
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Обработка ошибок
+    error_page 404 /404.html;
+    location = /404.html {
+        internal;
     }
 }
 
+
 # Создание символической ссылки
-ln -s /etc/nginx/sites-available/legal_assistant /etc/nginx/sites-enabled/
+ln -s /etc/nginx/sites-available/legalneuralassistant /etc/nginx/sites-enabled/
 
 # Проверка конфигурации Nginx
 nginx -t
@@ -127,38 +155,9 @@ nginx -t
 # Перезапуск Nginx
 systemctl restart nginx
 ```
-
-### 10. Настройка файрвола (UFW)
-
 ```bash
-# Разрешение HTTP и HTTPS
-ufw allow 'Nginx Full'
-ufw enable
-```
+Дополнительные настройки безопасности
+Настройка SSL с помощью Let's Encrypt (по желанию) Для обеспечения безопасности можно настроить SSL-сертификат через Let's Encrypt:
 
-### Дополнительные рекомендации
-
-1. Безопасность:
-   - Измените стандартные порты
-   - Настройте SSL (Let's Encrypt)
-   - Ограничьте права доступа
-
-2. Мониторинг:
-   - Настройте логирование
-   - Используйте инструменты мониторинга
-
-### Проверка работоспособности
-
-```bash
-# Просмотр логов Nginx
-tail -f /var/log/nginx/error.log
-
-# Просмотр логов Gunicorn
-journalctl -u legal_assistant
-```
-
-### Возможные проблемы
-
-- Проверьте права доступа к файлам
-- Убедитесь, что все переменные корректны
-- Проверьте логи при возникновении ошибок
+apt install certbot python3-certbot-nginx
+certbot --nginx -d legalneura.ddns.net
