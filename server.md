@@ -14,7 +14,7 @@ cd /root/legalneuralassistant1
 apt update && apt upgrade -y
 
 # Установка необходимых пакетов
-apt install -y python3-pip python3-venv python3-dev nginx git
+    apt install -y python3-pip python3-venv python3-dev nginx git
 ```
 
 ### 3. Создание виртуального окружения
@@ -91,8 +91,8 @@ Environment="PYTHONPATH=/root/legalneuralassistant1/legal_assistant"
 WantedBy=multi-user.target
 
 # Запуск и активация службы
-systemctl start legal_assistant
-systemctl enable legal_assistant
+systemctl start legalassistant
+systemctl enable legalassistant
 ```
 ```bash
  Перезагрузите systemd:
