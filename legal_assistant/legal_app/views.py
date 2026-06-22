@@ -17,8 +17,13 @@ from functools import wraps
 from docx import Document as DocxDocument
 from typing import Dict, Any
 
-# Initialize LegalAI instance and logger
-legal_ai = LegalAI()
+# Initialize LegalAI instance lazily and logger
+legal_ai = None
+def get_legal_ai():
+    global legal_ai
+    if legal_ai is None:
+        legal_ai = LegalAI()
+    return legal_ai
 logger = logging.getLogger(__name__)
 
 def format_russian_response(data: Dict[str, Any], status: int = 200) -> JsonResponse:
@@ -76,7 +81,7 @@ def chat(request):
             question = form.cleaned_data['question']
             user_ip = get_client_ip(request)
             
-            response = legal_ai.get_legal_response(question)
+            response = get_legal_ai().get_legal_response(question)
             if response.get('status') == 'success':
                 legal_question = LegalQuestion.objects.create(
                     user=request.user,
@@ -115,7 +120,7 @@ def document_generator(request):
                 context = form.cleaned_data['context']  # Direct plain text context
                 
                 # Generate document using LegalAI
-                generated_content = legal_ai.generate_document(doc_type, context)
+                generated_content = get_legal_ai().generate_document(doc_type, context)
                 
                 # Create Word document
                 document = DocxDocument()

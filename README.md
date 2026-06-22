@@ -45,7 +45,6 @@ legal_assistant/
 ```bash
 git clone https://github.com/AlexAvdeev1986/legalneuralassistant1.git
 
-cd legal_assistant
 
  
 2. Создание виртуального окружения
@@ -53,7 +52,6 @@ cd legal_assistant
 
 python -m venv venv
 source venv/bin/activate
-
 
 3. Установка зависимостей
 Установите необходимые пакеты из файла requirements.txt.
@@ -70,6 +68,8 @@ django-admin startapp legal_app
 
 5. Настройка переменных окружения
 В директории legal_assistant создайте файл .env со следующим содержимым. Замените шаблоны фактическими значениями:
+
+nano .env
 
 OPENAI_API_KEY = 'ваш_openai_api_key'  # Замените на свой OpenAI API ключ
 SECRET_KEY = 'ваш_secret_key'  # Замените на секретный ключ Django

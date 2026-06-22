@@ -4,13 +4,25 @@ import time
 from typing import Dict, Any
 from django.conf import settings
 from django.core.cache import cache
-from openai import OpenAI
+
+_OPENAI_AVAILABLE = True
+try:
+    # don't import OpenAI at module import time to avoid httpx/httpcore issues
+    from openai import OpenAI  # type: ignore
+except Exception:
+    OpenAI = None  # type: ignore
+    _OPENAI_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
 class LegalAI:
     def __init__(self):
-        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
+        if not _OPENAI_AVAILABLE:
+            # postpone import error until first use
+            from openai import OpenAI as _OpenAI  # local import
+            self.client = _OpenAI(api_key=settings.OPENAI_API_KEY)
+        else:
+            self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.cache_timeout = 3600  # 1 hour cache timeout
 
     def _get_cached_response(self, cache_key: str) -> Any:
